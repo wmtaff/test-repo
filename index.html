@@ -281,6 +281,83 @@
     </div>
 
     <script>
+        // === WEAPON DEFINITIONS ===
+        const WEAPONS = {
+            fists: {
+                name: 'Fists',
+                damage: 1,
+                color: '#4A90D9',
+                colorDark: '#3A7BC8',
+                icon: '👊',
+                tier: 0
+            },
+            bow: {
+                name: 'Bow & Arrow',
+                damage: 1.5,
+                color: '#8B4513',
+                colorDark: '#654321',
+                icon: '🏹',
+                tier: 1
+            },
+            musket: {
+                name: 'Musket',
+                damage: 2,
+                color: '#696969',
+                colorDark: '#505050',
+                icon: '🔫',
+                tier: 2
+            },
+            rifle: {
+                name: 'Rifle',
+                damage: 3,
+                color: '#2F4F4F',
+                colorDark: '#1C3030',
+                icon: '🎯',
+                tier: 3
+            },
+            machinegun: {
+                name: 'Machine Gun',
+                damage: 5,
+                color: '#4B0082',
+                colorDark: '#2E0051',
+                icon: '⚡',
+                tier: 4
+            },
+            laser: {
+                name: 'Laser',
+                damage: 8,
+                color: '#00FFFF',
+                colorDark: '#00CCCC',
+                icon: '💫',
+                tier: 5
+            }
+        };
+
+        // Ordered weapon progression
+        const WEAPON_ORDER = ['fists', 'bow', 'musket', 'rifle', 'machinegun', 'laser'];
+
+        // === POWER-UP DEFINITIONS (Temporary Buffs) ===
+        const POWERUPS = {
+            minigun: {
+                name: 'MINIGUN',
+                damage: 12,
+                duration: 10,
+                color: '#FF4500',
+                colorDark: '#CC3700',
+                icon: '🔥',
+                description: 'Rapid Fire!'
+            },
+            rocket: {
+                name: 'ROCKETS',
+                damage: 20,
+                duration: 10,
+                color: '#FF0000',
+                colorDark: '#CC0000',
+                icon: '🚀',
+                description: 'Explosive!'
+            }
+        };
+
         // === CONFIGURATION ===
         const CONFIG = {
             // Army
@@ -318,6 +395,8 @@
                 enemyDark: '#C93A3A',
                 positiveGate: '#4AD97A',
                 negativeGate: '#D94A4A',
+                weaponGate: '#9932CC',
+                powerupGate: '#FF8C00',
                 path: '#8B7355',
                 pathDark: '#6B5344',
                 pathLines: '#9B8365',
@@ -331,7 +410,7 @@
         // === GAME STATE ===
         let canvas, ctx;
         let gameState = {
-            screen: 'start', // start, playing, gameOver, levelComplete, boss
+            screen: 'start',
             level: 1,
             score: 0,
             coins: 0,
@@ -353,9 +432,11 @@
         let army = null;
         let gates = [];
         let enemies = [];
+        let powerups = [];
         let boss = null;
         let particles = [];
         let floatingTexts = [];
+        let projectiles = [];
 
         // Input state
         let touchStartX = 0;
@@ -387,7 +468,7 @@
             },
             soldierPower: {
                 name: 'Soldier Power',
-                description: 'More damage to boss',
+                description: 'Base damage multiplier',
                 levels: [
                     { value: 1, cost: 0 },
                     { value: 1.5, cost: 200 },
@@ -403,7 +484,58 @@
                 this.count = count;
                 this.x = 0;
                 this.positions = [];
+                this.weapon = 'fists';
+                this.activeBuff = null;
+                this.buffTimer = 0;
                 this.updateFormation();
+            }
+
+            getWeaponData() {
+                if (this.activeBuff && POWERUPS[this.activeBuff]) {
+                    return POWERUPS[this.activeBuff];
+                }
+                return WEAPONS[this.weapon];
+            }
+
+            getCurrentColor() {
+                const data = this.getWeaponData();
+                return data.color;
+            }
+
+            getCurrentColorDark() {
+                const data = this.getWeaponData();
+                return data.colorDark;
+            }
+
+            getDamageMultiplier() {
+                const basePower = UPGRADES.soldierPower.levels[gameState.upgrades.soldierPower].value;
+                const weaponData = this.getWeaponData();
+                return basePower * weaponData.damage;
+            }
+
+            upgradeWeapon() {
+                const currentTier = WEAPONS[this.weapon].tier;
+                const nextTier = currentTier + 1;
+                if (nextTier < WEAPON_ORDER.length) {
+                    this.weapon = WEAPON_ORDER[nextTier];
+                    return true;
+                }
+                return false;
+            }
+
+            applyBuff(buffType) {
+                this.activeBuff = buffType;
+                this.buffTimer = POWERUPS[buffType].duration;
+            }
+
+            updateBuff(deltaTime) {
+                if (this.activeBuff) {
+                    this.buffTimer -= deltaTime;
+                    if (this.buffTimer <= 0) {
+                        this.activeBuff = null;
+                        this.buffTimer = 0;
+                    }
+                }
             }
 
             updateFormation() {
@@ -455,20 +587,34 @@
         }
 
         class Gate {
-            constructor(distance, isLeft, operation, value) {
+            constructor(distance, isLeft, operation, value, gateType = 'number') {
                 this.distance = distance;
                 this.isLeft = isLeft;
-                this.operation = operation; // 'add', 'subtract', 'multiply', 'divide'
+                this.operation = operation;
                 this.value = value;
+                this.gateType = gateType; // 'number', 'weapon', 'powerup'
                 this.passed = false;
                 this.x = isLeft ? -CONFIG.gateWidth / 2 - 20 : CONFIG.gateWidth / 2 + 20;
             }
 
             isPositive() {
+                if (this.gateType === 'weapon' || this.gateType === 'powerup') return true;
                 return this.operation === 'add' || this.operation === 'multiply';
             }
 
+            getColor() {
+                if (this.gateType === 'weapon') return CONFIG.colors.weaponGate;
+                if (this.gateType === 'powerup') return CONFIG.colors.powerupGate;
+                return this.isPositive() ? CONFIG.colors.positiveGate : CONFIG.colors.negativeGate;
+            }
+
             getText() {
+                if (this.gateType === 'weapon') {
+                    return WEAPONS[this.value].icon + ' ' + WEAPONS[this.value].name;
+                }
+                if (this.gateType === 'powerup') {
+                    return POWERUPS[this.value].icon + ' ' + POWERUPS[this.value].name;
+                }
                 switch (this.operation) {
                     case 'add': return `+${this.value}`;
                     case 'subtract': return `-${this.value}`;
@@ -478,6 +624,19 @@
             }
 
             apply(army) {
+                if (this.gateType === 'weapon') {
+                    // Only upgrade if it's actually an upgrade
+                    const currentTier = WEAPONS[army.weapon].tier;
+                    const gateTier = WEAPONS[this.value].tier;
+                    if (gateTier > currentTier) {
+                        army.weapon = this.value;
+                    }
+                    return;
+                }
+                if (this.gateType === 'powerup') {
+                    army.applyBuff(this.value);
+                    return;
+                }
                 switch (this.operation) {
                     case 'add': army.addSoldiers(this.value); break;
                     case 'subtract': army.removeSoldiers(this.value); break;
@@ -496,6 +655,16 @@
             }
         }
 
+        class PowerUp {
+            constructor(distance, x, type) {
+                this.distance = distance;
+                this.x = x;
+                this.type = type;
+                this.collected = false;
+                this.bobOffset = Math.random() * Math.PI * 2;
+            }
+        }
+
         class Boss {
             constructor(level) {
                 this.maxHP = CONFIG.baseBossHP * level;
@@ -509,9 +678,13 @@
                 if (this.defeated || army.count <= 0) return;
 
                 // Boss takes damage from soldiers
-                const power = UPGRADES.soldierPower.levels[gameState.upgrades.soldierPower].value;
-                const damage = army.count * CONFIG.soldierDPS * power * deltaTime;
+                const damage = army.count * CONFIG.soldierDPS * army.getDamageMultiplier() * deltaTime;
                 this.hp -= damage;
+
+                // Spawn projectiles for visual effect
+                if (Math.random() < 0.3 && army.weapon !== 'fists') {
+                    spawnProjectile(army);
+                }
 
                 // Boss attacks soldiers
                 this.attackTimer += deltaTime;
@@ -520,12 +693,11 @@
                     const killed = Math.floor(1 + Math.random() * 2 + gameState.level * 0.5);
                     army.removeSoldiers(killed);
 
-                    // Spawn particles for killed soldiers
-                    for (let i = 0; i < killed; i++) {
+                    for (let i = 0; i < Math.min(killed, 5); i++) {
                         spawnParticles(
                             canvas.width / 2 + (Math.random() - 0.5) * 100,
                             canvas.height * 0.6 + (Math.random() - 0.5) * 50,
-                            CONFIG.colors.player,
+                            army.getCurrentColor(),
                             5
                         );
                     }
@@ -553,7 +725,7 @@
             update(deltaTime) {
                 this.x += this.vx * deltaTime * 60;
                 this.y += this.vy * deltaTime * 60;
-                this.vy += 0.2 * deltaTime * 60; // gravity
+                this.vy += 0.2 * deltaTime * 60;
                 this.life -= deltaTime;
             }
 
@@ -568,13 +740,74 @@
             }
         }
 
+        class Projectile {
+            constructor(x, y, targetX, targetY, color, type) {
+                this.x = x;
+                this.y = y;
+                this.targetX = targetX;
+                this.targetY = targetY;
+                this.color = color;
+                this.type = type;
+                this.life = 0.5;
+                this.speed = 15;
+
+                const dx = targetX - x;
+                const dy = targetY - y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                this.vx = (dx / dist) * this.speed;
+                this.vy = (dy / dist) * this.speed;
+            }
+
+            update(deltaTime) {
+                this.x += this.vx * deltaTime * 60;
+                this.y += this.vy * deltaTime * 60;
+                this.life -= deltaTime;
+            }
+
+            draw(ctx) {
+                ctx.fillStyle = this.color;
+                ctx.globalAlpha = Math.min(1, this.life * 2);
+
+                if (this.type === 'laser') {
+                    // Laser beam
+                    ctx.strokeStyle = this.color;
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.moveTo(this.x - this.vx * 2, this.y - this.vy * 2);
+                    ctx.lineTo(this.x, this.y);
+                    ctx.stroke();
+
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                } else if (this.type === 'rocket') {
+                    // Rocket
+                    ctx.beginPath();
+                    ctx.ellipse(this.x, this.y, 8, 4, Math.atan2(this.vy, this.vx), 0, Math.PI * 2);
+                    ctx.fill();
+                    // Trail
+                    ctx.fillStyle = '#FF6600';
+                    ctx.beginPath();
+                    ctx.arc(this.x - this.vx * 0.5, this.y - this.vy * 0.5, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                } else {
+                    // Default bullet/arrow
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.globalAlpha = 1;
+            }
+        }
+
         class FloatingText {
-            constructor(x, y, text, color) {
+            constructor(x, y, text, color, size = 32) {
                 this.x = x;
                 this.y = y;
                 this.text = text;
                 this.color = color;
-                this.life = 1;
+                this.size = size;
+                this.life = 1.5;
                 this.vy = -2;
             }
 
@@ -584,11 +817,14 @@
             }
 
             draw(ctx) {
-                const alpha = this.life;
+                const alpha = Math.min(1, this.life);
                 ctx.globalAlpha = alpha;
                 ctx.fillStyle = this.color;
-                ctx.font = 'bold 32px Arial';
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 3;
+                ctx.font = `bold ${this.size}px Arial`;
                 ctx.textAlign = 'center';
+                ctx.strokeText(this.text, this.x, this.y);
                 ctx.fillText(this.text, this.x, this.y);
                 ctx.globalAlpha = 1;
             }
@@ -724,9 +960,11 @@
             army = new Army(startingCount);
             gates = [];
             enemies = [];
+            powerups = [];
             boss = null;
             particles = [];
             floatingTexts = [];
+            projectiles = [];
 
             generateLevel();
             hideAllScreens();
@@ -742,8 +980,13 @@
             gameState.distance = 0;
             gameState.targetX = 0;
 
+            // Keep weapon but clear buff
+            army.activeBuff = null;
+            army.buffTimer = 0;
+
             gates = [];
             enemies = [];
+            powerups = [];
             boss = null;
 
             generateLevel();
@@ -753,13 +996,21 @@
         function generateLevel() {
             const levelLength = CONFIG.levelLength + gameState.level * 500;
             let currentDistance = 300;
+            let gateIndex = 0;
 
-            // Generate gates
             while (currentDistance < levelLength - 500) {
                 const gateDistance = currentDistance;
-                const gatePair = generateGatePair(gateDistance);
-                gates.push(gatePair.left);
-                gates.push(gatePair.right);
+
+                // Every 3rd gate pair, offer a weapon upgrade instead
+                if (gateIndex % 3 === 2 && army) {
+                    const gatePair = generateWeaponGatePair(gateDistance);
+                    gates.push(gatePair.left);
+                    gates.push(gatePair.right);
+                } else {
+                    const gatePair = generateGatePair(gateDistance);
+                    gates.push(gatePair.left);
+                    gates.push(gatePair.right);
+                }
 
                 // Add enemies between gates
                 const enemyDistance = currentDistance + CONFIG.gateSpawnDistance / 2;
@@ -769,7 +1020,16 @@
                     enemies.push(new Enemy(enemyDistance, enemyCount, enemyX));
                 }
 
+                // Occasionally spawn power-ups
+                if (Math.random() > 0.7) {
+                    const powerupDistance = currentDistance + CONFIG.gateSpawnDistance * 0.75;
+                    const powerupX = (Math.random() - 0.5) * CONFIG.pathWidth * 0.4;
+                    const powerupType = Math.random() > 0.5 ? 'minigun' : 'rocket';
+                    powerups.push(new PowerUp(powerupDistance, powerupX, powerupType));
+                }
+
                 currentDistance += CONFIG.gateSpawnDistance;
+                gateIndex++;
             }
         }
 
@@ -784,31 +1044,54 @@
                 { op: 'divide', values: [2] }
             ];
 
-            // Pick a positive operation
             const posChoice = positiveOps[Math.floor(Math.random() * positiveOps.length)];
             let posValue = posChoice.values[Math.floor(Math.random() * posChoice.values.length)];
 
-            // Smart gate generation - don't offer big multiplies when army is large
             if (posChoice.op === 'multiply' && army && army.count > 150) {
                 posValue = 2;
             }
 
-            // Pick a negative operation
             const negChoice = negativeOps[Math.floor(Math.random() * negativeOps.length)];
             const negValue = negChoice.values[Math.floor(Math.random() * negChoice.values.length)];
 
-            // Randomly assign left/right
             if (Math.random() > 0.5) {
                 return {
-                    left: new Gate(distance, true, posChoice.op, posValue),
-                    right: new Gate(distance, false, negChoice.op, negValue)
+                    left: new Gate(distance, true, posChoice.op, posValue, 'number'),
+                    right: new Gate(distance, false, negChoice.op, negValue, 'number')
                 };
             } else {
                 return {
-                    left: new Gate(distance, true, negChoice.op, negValue),
-                    right: new Gate(distance, false, posChoice.op, posValue)
+                    left: new Gate(distance, true, negChoice.op, negValue, 'number'),
+                    right: new Gate(distance, false, posChoice.op, posValue, 'number')
                 };
             }
+        }
+
+        function generateWeaponGatePair(distance) {
+            const currentTier = army ? WEAPONS[army.weapon].tier : 0;
+
+            // Offer next weapon tier as upgrade, or a powerup
+            let leftGate, rightGate;
+
+            if (currentTier < WEAPON_ORDER.length - 1) {
+                // Offer weapon upgrade
+                const nextWeapon = WEAPON_ORDER[currentTier + 1];
+                const powerupType = Math.random() > 0.5 ? 'minigun' : 'rocket';
+
+                if (Math.random() > 0.5) {
+                    leftGate = new Gate(distance, true, 'weapon', nextWeapon, 'weapon');
+                    rightGate = new Gate(distance, false, 'powerup', powerupType, 'powerup');
+                } else {
+                    leftGate = new Gate(distance, true, 'powerup', powerupType, 'powerup');
+                    rightGate = new Gate(distance, false, 'weapon', nextWeapon, 'weapon');
+                }
+            } else {
+                // Max weapon tier, offer powerups
+                leftGate = new Gate(distance, true, 'powerup', 'minigun', 'powerup');
+                rightGate = new Gate(distance, false, 'powerup', 'rocket', 'powerup');
+            }
+
+            return { left: leftGate, right: rightGate };
         }
 
         function spawnParticles(x, y, color, count) {
@@ -825,8 +1108,29 @@
             }
         }
 
-        function addFloatingText(x, y, text, color) {
-            floatingTexts.push(new FloatingText(x, y, text, color));
+        function spawnProjectile(army) {
+            const baseX = canvas.width / 2 + army.x;
+            const baseY = canvas.height * 0.7;
+            const targetX = canvas.width / 2;
+            const targetY = canvas.height * 0.45;
+
+            let type = 'bullet';
+            if (army.activeBuff === 'rocket') type = 'rocket';
+            else if (army.weapon === 'laser') type = 'laser';
+            else if (army.weapon === 'bow') type = 'arrow';
+
+            projectiles.push(new Projectile(
+                baseX + (Math.random() - 0.5) * 50,
+                baseY - Math.random() * 30,
+                targetX + (Math.random() - 0.5) * 40,
+                targetY + (Math.random() - 0.5) * 40,
+                army.getCurrentColor(),
+                type
+            ));
+        }
+
+        function addFloatingText(x, y, text, color, size = 32) {
+            floatingTexts.push(new FloatingText(x, y, text, color, size));
         }
 
         let lastTime = 0;
@@ -847,6 +1151,7 @@
             gameState.currentX += (gameState.targetX - gameState.currentX) * 0.15;
             if (army) {
                 army.x = gameState.currentX;
+                army.updateBuff(deltaTime);
             }
 
             // Screen shake decay
@@ -858,6 +1163,12 @@
                 return p.life > 0;
             });
 
+            // Update projectiles
+            projectiles = projectiles.filter(p => {
+                p.update(deltaTime);
+                return p.life > 0;
+            });
+
             // Update floating texts
             floatingTexts = floatingTexts.filter(t => {
                 t.update(deltaTime);
@@ -865,22 +1176,17 @@
             });
 
             if (gameState.screen === 'playing') {
-                // Move forward
                 gameState.distance += CONFIG.forwardSpeed * deltaTime;
 
-                // Check gate collisions
                 checkGateCollisions();
-
-                // Check enemy collisions
                 checkEnemyCollisions();
+                checkPowerupCollisions();
 
-                // Check for level end
                 const levelLength = CONFIG.levelLength + gameState.level * 500;
                 if (gameState.distance >= levelLength) {
                     startBossBattle();
                 }
 
-                // Check for game over
                 if (army.count <= 0) {
                     gameOver();
                 }
@@ -912,15 +1218,32 @@
                     if (Math.abs(armyScreenX - gateScreenX) < CONFIG.gateWidth / 2 + 30) {
                         gate.passed = true;
                         const oldCount = army.count;
+                        const oldWeapon = army.weapon;
+
                         gate.apply(army);
-                        const diff = army.count - oldCount;
 
-                        const color = gate.isPositive() ? CONFIG.colors.positiveGate : CONFIG.colors.negativeGate;
-                        addFloatingText(canvas.width / 2, canvas.height * 0.5, gate.getText(), color);
+                        // Show feedback
+                        if (gate.gateType === 'weapon' && army.weapon !== oldWeapon) {
+                            addFloatingText(canvas.width / 2, canvas.height * 0.4,
+                                WEAPONS[army.weapon].icon + ' ' + WEAPONS[army.weapon].name + '!',
+                                CONFIG.colors.weaponGate, 36);
+                            gameState.screenShake = 8;
+                            spawnParticles(armyScreenX, armyY, WEAPONS[army.weapon].color, 20);
+                        } else if (gate.gateType === 'powerup') {
+                            addFloatingText(canvas.width / 2, canvas.height * 0.4,
+                                POWERUPS[gate.value].icon + ' ' + POWERUPS[gate.value].description,
+                                CONFIG.colors.powerupGate, 36);
+                            gameState.screenShake = 10;
+                            spawnParticles(armyScreenX, armyY, POWERUPS[gate.value].color, 25);
+                        } else {
+                            const diff = army.count - oldCount;
+                            const color = gate.isPositive() ? CONFIG.colors.positiveGate : CONFIG.colors.negativeGate;
+                            addFloatingText(canvas.width / 2, canvas.height * 0.5, gate.getText(), color);
 
-                        if (!gate.isPositive()) {
-                            gameState.screenShake = 5;
-                            spawnParticles(armyScreenX, armyY, CONFIG.colors.player, Math.min(Math.abs(diff), 20));
+                            if (!gate.isPositive()) {
+                                gameState.screenShake = 5;
+                                spawnParticles(armyScreenX, armyY, army.getCurrentColor(), Math.min(Math.abs(diff), 20));
+                            }
                         }
                     }
                 }
@@ -942,15 +1265,45 @@
                     if (Math.abs(armyScreenX - enemyScreenX) < 60) {
                         enemy.defeated = true;
 
-                        if (army.count > enemy.count) {
-                            army.removeSoldiers(enemy.count);
+                        // Weapon affects combat effectiveness
+                        const damageMultiplier = army.getDamageMultiplier();
+                        const effectiveEnemyCount = Math.ceil(enemy.count / damageMultiplier);
+
+                        if (army.count > effectiveEnemyCount) {
+                            army.removeSoldiers(effectiveEnemyCount);
                             gameState.screenShake = 10;
                             spawnParticles(enemyScreenX, enemyScreenY, CONFIG.colors.enemy, 15);
-                            spawnParticles(armyScreenX, armyY, CONFIG.colors.player, Math.min(enemy.count, 15));
-                            addFloatingText(canvas.width / 2, canvas.height * 0.5, `-${enemy.count}`, CONFIG.colors.enemy);
+                            spawnParticles(armyScreenX, armyY, army.getCurrentColor(), Math.min(effectiveEnemyCount, 15));
+                            addFloatingText(canvas.width / 2, canvas.height * 0.5, `-${effectiveEnemyCount}`, CONFIG.colors.enemy);
                         } else {
                             army.count = 0;
                         }
+                    }
+                }
+            });
+        }
+
+        function checkPowerupCollisions() {
+            const armyY = canvas.height * 0.7;
+
+            powerups.forEach(powerup => {
+                if (powerup.collected) return;
+
+                const powerupScreenY = worldToScreenY(powerup.distance - gameState.distance);
+
+                if (powerupScreenY > armyY - 50 && powerupScreenY < armyY + 50) {
+                    const powerupScreenX = canvas.width / 2 + powerup.x;
+                    const armyScreenX = canvas.width / 2 + army.x;
+
+                    if (Math.abs(armyScreenX - powerupScreenX) < 50) {
+                        powerup.collected = true;
+                        army.applyBuff(powerup.type);
+
+                        addFloatingText(canvas.width / 2, canvas.height * 0.4,
+                            POWERUPS[powerup.type].icon + ' ' + POWERUPS[powerup.type].description,
+                            POWERUPS[powerup.type].color, 36);
+                        gameState.screenShake = 8;
+                        spawnParticles(powerupScreenX, powerupScreenY, POWERUPS[powerup.type].color, 20);
                     }
                 }
             });
@@ -973,7 +1326,8 @@
         function levelComplete() {
             gameState.screen = 'levelComplete';
 
-            const bonus = army.count * gameState.level;
+            const weaponBonus = WEAPONS[army.weapon].tier + 1;
+            const bonus = army.count * gameState.level * weaponBonus;
             const coins = Math.floor(bonus / 10);
 
             gameState.score += bonus;
@@ -1012,7 +1366,6 @@
 
         // === RENDERING ===
         function render() {
-            // Apply screen shake
             ctx.save();
             if (gameState.screenShake > 0.5) {
                 ctx.translate(
@@ -1021,10 +1374,7 @@
                 );
             }
 
-            // Draw background
             drawBackground();
-
-            // Draw path
             drawPath();
 
             if (gameState.screen === 'playing' || gameState.screen === 'boss') {
@@ -1032,6 +1382,13 @@
                 gates.forEach(gate => {
                     if (!gate.passed) {
                         drawGate(gate);
+                    }
+                });
+
+                // Draw powerups
+                powerups.forEach(powerup => {
+                    if (!powerup.collected) {
+                        drawPowerup(powerup);
                     }
                 });
 
@@ -1046,6 +1403,9 @@
                 if (gameState.screen === 'boss' && boss) {
                     drawBoss();
                 }
+
+                // Draw projectiles
+                projectiles.forEach(p => p.draw(ctx));
 
                 // Draw army
                 if (army) {
@@ -1080,7 +1440,6 @@
             const pathTopWidth = 100;
             const pathBottomWidth = canvas.width * 0.9;
 
-            // Main path
             ctx.fillStyle = CONFIG.colors.path;
             ctx.beginPath();
             ctx.moveTo(canvas.width / 2 - pathTopWidth / 2, horizon);
@@ -1090,7 +1449,6 @@
             ctx.closePath();
             ctx.fill();
 
-            // Path lines for motion effect
             ctx.strokeStyle = CONFIG.colors.pathLines;
             ctx.lineWidth = 2;
 
@@ -1112,7 +1470,6 @@
             }
             ctx.globalAlpha = 1;
 
-            // Path edges
             ctx.strokeStyle = CONFIG.colors.pathDark;
             ctx.lineWidth = 4;
 
@@ -1143,25 +1500,83 @@
             const gateWidth = CONFIG.gateWidth * scale;
             const gateHeight = CONFIG.gateHeight * scale;
 
-            const color = gate.isPositive() ? CONFIG.colors.positiveGate : CONFIG.colors.negativeGate;
+            const color = gate.getColor();
 
-            // Gate archway
+            // Gate glow for weapon/powerup gates
+            if (gate.gateType === 'weapon' || gate.gateType === 'powerup') {
+                ctx.shadowColor = color;
+                ctx.shadowBlur = 20 * scale;
+            }
+
             ctx.fillStyle = color;
             ctx.globalAlpha = 0.7;
             ctx.fillRect(gateX - gateWidth / 2, y - gateHeight, gateWidth, gateHeight);
 
-            // Gate border
             ctx.globalAlpha = 1;
             ctx.strokeStyle = color;
             ctx.lineWidth = 3 * scale;
             ctx.strokeRect(gateX - gateWidth / 2, y - gateHeight, gateWidth, gateHeight);
 
+            ctx.shadowBlur = 0;
+
             // Gate text
             ctx.fillStyle = 'white';
-            ctx.font = `bold ${Math.floor(24 * scale)}px Arial`;
+            const fontSize = gate.gateType === 'number' ? Math.floor(24 * scale) : Math.floor(16 * scale);
+            ctx.font = `bold ${fontSize}px Arial`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(gate.getText(), gateX, y - gateHeight / 2);
+
+            const text = gate.getText();
+            if (gate.gateType === 'weapon' || gate.gateType === 'powerup') {
+                // Split icon and text for better display
+                const lines = text.split(' ');
+                ctx.font = `bold ${Math.floor(28 * scale)}px Arial`;
+                ctx.fillText(lines[0], gateX, y - gateHeight / 2 - 10 * scale);
+                ctx.font = `bold ${Math.floor(14 * scale)}px Arial`;
+                ctx.fillText(lines.slice(1).join(' '), gateX, y - gateHeight / 2 + 15 * scale);
+            } else {
+                ctx.fillText(text, gateX, y - gateHeight / 2);
+            }
+        }
+
+        function drawPowerup(powerup) {
+            const relativeDistance = powerup.distance - gameState.distance;
+            if (relativeDistance < 0 || relativeDistance > 500) return;
+
+            const y = worldToScreenY(relativeDistance);
+            const scale = Math.max(0.3, 1 - relativeDistance / 500);
+
+            const pathTopWidth = 100;
+            const pathBottomWidth = canvas.width * 0.9;
+            const t = (y - canvas.height * 0.35) / (canvas.height - canvas.height * 0.35);
+            const pathWidthAtY = pathTopWidth + (pathBottomWidth - pathTopWidth) * t;
+
+            const powerupX = canvas.width / 2 + (powerup.x / CONFIG.pathWidth) * pathWidthAtY * 0.4;
+
+            // Bobbing animation
+            const bob = Math.sin(Date.now() * 0.005 + powerup.bobOffset) * 5 * scale;
+
+            const data = POWERUPS[powerup.type];
+
+            // Glow
+            ctx.shadowColor = data.color;
+            ctx.shadowBlur = 15 * scale;
+
+            // Circle background
+            ctx.fillStyle = data.color;
+            ctx.globalAlpha = 0.8;
+            ctx.beginPath();
+            ctx.arc(powerupX, y - 20 * scale + bob, 25 * scale, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.globalAlpha = 1;
+            ctx.shadowBlur = 0;
+
+            // Icon
+            ctx.font = `${Math.floor(30 * scale)}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(data.icon, powerupX, y - 20 * scale + bob);
         }
 
         function drawEnemy(enemy) {
@@ -1178,7 +1593,6 @@
 
             const enemyX = canvas.width / 2 + (enemy.x / CONFIG.pathWidth) * pathWidthAtY * 0.4;
 
-            // Draw enemy soldiers
             const rows = Math.ceil(Math.sqrt(enemy.count * 0.5));
             const cols = Math.ceil(enemy.count / rows);
 
@@ -1189,11 +1603,10 @@
                     const sx = enemyX + (col - cols / 2) * 8 * scale;
                     const sy = y - row * 8 * scale;
 
-                    drawSoldier(sx, sy, CONFIG.colors.enemy, CONFIG.colors.enemyDark, scale * 0.8);
+                    drawSoldier(sx, sy, CONFIG.colors.enemy, CONFIG.colors.enemyDark, scale * 0.8, null);
                 }
             }
 
-            // Enemy count
             ctx.fillStyle = 'white';
             ctx.strokeStyle = CONFIG.colors.enemyDark;
             ctx.lineWidth = 3;
@@ -1207,18 +1620,21 @@
             const baseY = canvas.height * 0.7;
             const baseX = canvas.width / 2 + army.x;
 
+            const color = army.getCurrentColor();
+            const colorDark = army.getCurrentColorDark();
+
             // Draw soldiers
             army.positions.forEach((pos, i) => {
                 const wobble = Math.sin(Date.now() * 0.01 + pos.wobble) * 2;
                 const sx = baseX + pos.x;
                 const sy = baseY - pos.y + wobble;
 
-                drawSoldier(sx, sy, CONFIG.colors.player, CONFIG.colors.playerDark, 1);
+                drawSoldier(sx, sy, color, colorDark, 1, army.weapon);
             });
 
             // Draw count above army
             ctx.fillStyle = 'white';
-            ctx.strokeStyle = CONFIG.colors.playerDark;
+            ctx.strokeStyle = colorDark;
             ctx.lineWidth = 4;
             ctx.font = 'bold 28px Arial';
             ctx.textAlign = 'center';
@@ -1226,10 +1642,10 @@
             ctx.fillText(army.count, baseX, baseY - army.positions.length * 3 - 30);
         }
 
-        function drawSoldier(x, y, color, darkColor, scale) {
+        function drawSoldier(x, y, color, darkColor, scale, weapon) {
             const size = CONFIG.soldierSize * scale;
 
-            // Body (capsule shape)
+            // Body
             ctx.fillStyle = color;
             ctx.beginPath();
             ctx.ellipse(x, y - size * 0.5, size * 0.6, size, 0, 0, Math.PI * 2);
@@ -1240,6 +1656,31 @@
             ctx.beginPath();
             ctx.arc(x, y - size * 1.3, size * 0.5, 0, Math.PI * 2);
             ctx.fill();
+
+            // Draw weapon indicator
+            if (weapon && weapon !== 'fists') {
+                ctx.fillStyle = darkColor;
+                if (weapon === 'bow') {
+                    // Small bow
+                    ctx.strokeStyle = '#8B4513';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.arc(x + size * 0.8, y - size * 0.5, size * 0.4, -0.5, 0.5);
+                    ctx.stroke();
+                } else if (weapon === 'laser') {
+                    // Glow effect
+                    ctx.fillStyle = '#00FFFF';
+                    ctx.globalAlpha = 0.5;
+                    ctx.beginPath();
+                    ctx.arc(x, y - size * 0.5, size * 0.8, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1;
+                } else {
+                    // Gun barrel
+                    ctx.fillStyle = '#333';
+                    ctx.fillRect(x + size * 0.3, y - size * 0.7, size * 0.8, size * 0.2);
+                }
+            }
         }
 
         function drawBoss() {
@@ -1274,27 +1715,22 @@
             const barX = canvas.width / 2 - barWidth / 2;
             const barY = 80;
 
-            // Bar background
             ctx.fillStyle = '#333';
             ctx.fillRect(barX, barY, barWidth, barHeight);
 
-            // HP fill
             const hpPercent = boss.hp / boss.maxHP;
             ctx.fillStyle = hpPercent > 0.3 ? '#4AD97A' : '#D94A4A';
             ctx.fillRect(barX, barY, barWidth * hpPercent, barHeight);
 
-            // Bar border
             ctx.strokeStyle = 'white';
             ctx.lineWidth = 3;
             ctx.strokeRect(barX, barY, barWidth, barHeight);
 
-            // HP text
             ctx.fillStyle = 'white';
             ctx.font = 'bold 16px Arial';
             ctx.textAlign = 'center';
             ctx.fillText(`${Math.ceil(boss.hp)} / ${boss.maxHP}`, canvas.width / 2, barY + barHeight / 2 + 5);
 
-            // Boss label
             ctx.font = 'bold 20px Arial';
             ctx.fillText(`BOSS LV.${gameState.level}`, canvas.width / 2, barY - 15);
         }
@@ -1302,27 +1738,71 @@
         function drawHUD() {
             // Soldier count (top left)
             ctx.fillStyle = 'white';
-            ctx.font = 'bold 24px Arial';
+            ctx.font = 'bold 20px Arial';
             ctx.textAlign = 'left';
-            ctx.fillText(`Soldiers: ${army ? army.count : 0}`, 20, 40);
+            ctx.fillText(`Soldiers: ${army ? army.count : 0}`, 15, 35);
+
+            // Weapon display (below soldier count)
+            if (army) {
+                const weaponData = WEAPONS[army.weapon];
+                ctx.fillStyle = weaponData.color;
+                ctx.font = 'bold 18px Arial';
+                ctx.fillText(`${weaponData.icon} ${weaponData.name}`, 15, 60);
+
+                // Damage multiplier
+                ctx.fillStyle = '#AAA';
+                ctx.font = '14px Arial';
+                ctx.fillText(`DMG: x${army.getDamageMultiplier().toFixed(1)}`, 15, 80);
+            }
+
+            // Active buff timer
+            if (army && army.activeBuff) {
+                const buffData = POWERUPS[army.activeBuff];
+                const timerWidth = 150;
+                const timerHeight = 30;
+                const timerX = 15;
+                const timerY = 95;
+
+                // Timer background
+                ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                ctx.fillRect(timerX, timerY, timerWidth, timerHeight);
+
+                // Timer fill
+                const fillPercent = army.buffTimer / buffData.duration;
+                ctx.fillStyle = buffData.color;
+                ctx.fillRect(timerX, timerY, timerWidth * fillPercent, timerHeight);
+
+                // Border
+                ctx.strokeStyle = buffData.color;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(timerX, timerY, timerWidth, timerHeight);
+
+                // Text
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 16px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(`${buffData.icon} ${Math.ceil(army.buffTimer)}s`, timerX + timerWidth / 2, timerY + timerHeight / 2 + 5);
+            }
 
             // Level (top right)
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 20px Arial';
             ctx.textAlign = 'right';
-            ctx.fillText(`Level ${gameState.level}`, canvas.width - 20, 40);
+            ctx.fillText(`Level ${gameState.level}`, canvas.width - 15, 35);
 
             // Coins (top center)
             ctx.textAlign = 'center';
             ctx.fillStyle = CONFIG.colors.gold;
-            ctx.fillText(`${gameState.totalCoins}`, canvas.width / 2, 40);
+            ctx.fillText(`${gameState.totalCoins}`, canvas.width / 2, 35);
 
             // Coin icon
             ctx.fillStyle = CONFIG.colors.gold;
             ctx.beginPath();
-            ctx.arc(canvas.width / 2 - 40, 35, 12, 0, Math.PI * 2);
+            ctx.arc(canvas.width / 2 - 35, 30, 10, 0, Math.PI * 2);
             ctx.fill();
             ctx.fillStyle = '#333';
-            ctx.font = 'bold 12px Arial';
-            ctx.fillText('$', canvas.width / 2 - 40, 39);
+            ctx.font = 'bold 10px Arial';
+            ctx.fillText('$', canvas.width / 2 - 35, 33);
         }
 
         // === UI & MENUS ===
