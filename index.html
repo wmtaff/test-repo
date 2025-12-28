@@ -1,0 +1,1408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+    <title>Crowd Runner</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #1a1a2e;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        #gameContainer {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+
+        #gameCanvas {
+            display: block;
+            touch-action: none;
+        }
+
+        .screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            z-index: 10;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .screen.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .title {
+            font-size: 2.5em;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            margin-bottom: 20px;
+            text-shadow: 0 4px 8px rgba(0,0,0,0.5);
+        }
+
+        .subtitle {
+            font-size: 1.2em;
+            opacity: 0.8;
+            margin-bottom: 40px;
+        }
+
+        .btn {
+            padding: 15px 50px;
+            font-size: 1.3em;
+            font-weight: bold;
+            border: none;
+            border-radius: 30px;
+            cursor: pointer;
+            margin: 10px;
+            transition: transform 0.2s, box-shadow 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #4AD97A, #2ecc71);
+            color: white;
+            box-shadow: 0 4px 15px rgba(74, 217, 122, 0.4);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #4A90D9, #3498db);
+            color: white;
+            box-shadow: 0 4px 15px rgba(74, 144, 217, 0.4);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #D94A4A, #e74c3c);
+            color: white;
+            box-shadow: 0 4px 15px rgba(217, 74, 74, 0.4);
+        }
+
+        .stats {
+            display: flex;
+            gap: 30px;
+            margin: 20px 0;
+        }
+
+        .stat {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #FFD700;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.7;
+        }
+
+        .high-score {
+            color: #FFD700;
+            font-size: 1.1em;
+            margin-top: 20px;
+        }
+
+        #shopScreen .upgrades {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            max-width: 350px;
+            width: 90%;
+            margin: 20px 0;
+        }
+
+        .upgrade-item {
+            background: rgba(255,255,255,0.1);
+            padding: 15px;
+            border-radius: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .upgrade-info h3 {
+            font-size: 1em;
+            margin-bottom: 5px;
+        }
+
+        .upgrade-info p {
+            font-size: 0.8em;
+            opacity: 0.7;
+        }
+
+        .upgrade-btn {
+            padding: 10px 20px;
+            font-size: 0.9em;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            background: linear-gradient(135deg, #FFD700, #FFA500);
+            color: #333;
+            font-weight: bold;
+        }
+
+        .upgrade-btn:disabled {
+            background: #555;
+            color: #888;
+            cursor: not-allowed;
+        }
+
+        .coins-display {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1.5em;
+            color: #FFD700;
+            margin-bottom: 20px;
+        }
+
+        .coin-icon {
+            width: 30px;
+            height: 30px;
+            background: linear-gradient(135deg, #FFD700, #FFA500);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.6em;
+            color: #333;
+            font-weight: bold;
+        }
+
+        .tap-hint {
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.5; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.05); }
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas"></canvas>
+
+        <!-- Start Screen -->
+        <div id="startScreen" class="screen active">
+            <div class="title">Crowd Runner</div>
+            <div class="subtitle">Swipe to control your army!</div>
+            <button class="btn btn-primary" onclick="startGame()">TAP TO START</button>
+            <button class="btn btn-secondary" onclick="showShop()">UPGRADES</button>
+            <div class="high-score">High Score: <span id="highScoreDisplay">0</span></div>
+        </div>
+
+        <!-- Game Over Screen -->
+        <div id="gameOverScreen" class="screen">
+            <div class="title" style="color: #D94A4A;">Game Over</div>
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-value" id="finalLevel">1</div>
+                    <div class="stat-label">Level</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="finalScore">0</div>
+                    <div class="stat-label">Score</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="coinsEarned">0</div>
+                    <div class="stat-label">Coins</div>
+                </div>
+            </div>
+            <button class="btn btn-danger" onclick="restartGame()">RETRY</button>
+            <button class="btn btn-secondary" onclick="showStartFromGameOver()">MENU</button>
+        </div>
+
+        <!-- Level Complete Screen -->
+        <div id="levelCompleteScreen" class="screen">
+            <div class="title" style="color: #4AD97A;">Level Complete!</div>
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-value" id="survivingSoldiers">0</div>
+                    <div class="stat-label">Soldiers</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="levelBonus">0</div>
+                    <div class="stat-label">Bonus</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="levelCoins">0</div>
+                    <div class="stat-label">Coins</div>
+                </div>
+            </div>
+            <button class="btn btn-primary" onclick="nextLevel()">NEXT LEVEL</button>
+        </div>
+
+        <!-- Shop Screen -->
+        <div id="shopScreen" class="screen">
+            <div class="title">Upgrades</div>
+            <div class="coins-display">
+                <div class="coin-icon">$</div>
+                <span id="shopCoins">0</span>
+            </div>
+            <div class="upgrades" id="upgradesList"></div>
+            <button class="btn btn-secondary" onclick="hideShop()">BACK</button>
+        </div>
+    </div>
+
+    <script>
+        // === CONFIGURATION ===
+        const CONFIG = {
+            // Army
+            startingSoldiers: 20,
+            maxSoldiers: 500,
+            soldierSize: 8,
+            formationSpacing: 12,
+
+            // Movement
+            pathWidth: 300,
+            moveSpeed: 0.15,
+            forwardSpeed: 200,
+
+            // Gates
+            gateSpawnDistance: 400,
+            gateWidth: 120,
+            gateHeight: 100,
+
+            // Enemies
+            enemySpawnDistance: 250,
+
+            // Boss
+            baseBossHP: 100,
+            bossAttackRate: 1,
+            soldierDPS: 1,
+
+            // Level
+            levelLength: 4000,
+
+            // Colors
+            colors: {
+                player: '#4A90D9',
+                playerDark: '#3A7BC8',
+                enemy: '#D94A4A',
+                enemyDark: '#C93A3A',
+                positiveGate: '#4AD97A',
+                negativeGate: '#D94A4A',
+                path: '#8B7355',
+                pathDark: '#6B5344',
+                pathLines: '#9B8365',
+                sky: '#87CEEB',
+                horizon: '#E0E0E0',
+                boss: '#8B0000',
+                gold: '#FFD700'
+            }
+        };
+
+        // === GAME STATE ===
+        let canvas, ctx;
+        let gameState = {
+            screen: 'start', // start, playing, gameOver, levelComplete, boss
+            level: 1,
+            score: 0,
+            coins: 0,
+            totalCoins: 0,
+            highScore: 0,
+            distance: 0,
+            targetX: 0,
+            currentX: 0,
+            screenShake: 0,
+
+            // Upgrades
+            upgrades: {
+                startingArmy: 0,
+                moveSpeed: 0,
+                soldierPower: 0
+            }
+        };
+
+        let army = null;
+        let gates = [];
+        let enemies = [];
+        let boss = null;
+        let particles = [];
+        let floatingTexts = [];
+
+        // Input state
+        let touchStartX = 0;
+        let touchCurrentX = 0;
+        let isDragging = false;
+
+        // === UPGRADE DEFINITIONS ===
+        const UPGRADES = {
+            startingArmy: {
+                name: 'Starting Army',
+                description: 'More soldiers at start',
+                levels: [
+                    { value: 20, cost: 0 },
+                    { value: 25, cost: 100 },
+                    { value: 30, cost: 250 },
+                    { value: 40, cost: 500 },
+                    { value: 50, cost: 1000 }
+                ]
+            },
+            moveSpeed: {
+                name: 'Move Speed',
+                description: 'Faster lateral movement',
+                levels: [
+                    { value: 0.15, cost: 0 },
+                    { value: 0.20, cost: 150 },
+                    { value: 0.25, cost: 300 },
+                    { value: 0.30, cost: 600 }
+                ]
+            },
+            soldierPower: {
+                name: 'Soldier Power',
+                description: 'More damage to boss',
+                levels: [
+                    { value: 1, cost: 0 },
+                    { value: 1.5, cost: 200 },
+                    { value: 2, cost: 500 },
+                    { value: 3, cost: 1000 }
+                ]
+            }
+        };
+
+        // === CLASSES ===
+        class Army {
+            constructor(count) {
+                this.count = count;
+                this.x = 0;
+                this.positions = [];
+                this.updateFormation();
+            }
+
+            updateFormation() {
+                this.positions = [];
+                const rows = Math.ceil(Math.sqrt(this.count * 0.8));
+                let soldierIndex = 0;
+
+                for (let row = 0; row < rows && soldierIndex < this.count; row++) {
+                    const soldiersInRow = Math.min(
+                        Math.ceil((rows - row) * 1.5),
+                        this.count - soldierIndex
+                    );
+                    const rowWidth = (soldiersInRow - 1) * CONFIG.formationSpacing;
+
+                    for (let i = 0; i < soldiersInRow && soldierIndex < this.count; i++) {
+                        this.positions.push({
+                            x: -rowWidth / 2 + i * CONFIG.formationSpacing + (Math.random() - 0.5) * 4,
+                            y: row * CONFIG.formationSpacing + (Math.random() - 0.5) * 4,
+                            wobble: Math.random() * Math.PI * 2
+                        });
+                        soldierIndex++;
+                    }
+                }
+            }
+
+            addSoldiers(amount) {
+                const newCount = Math.min(this.count + amount, CONFIG.maxSoldiers);
+                if (newCount !== this.count) {
+                    this.count = newCount;
+                    this.updateFormation();
+                }
+            }
+
+            removeSoldiers(amount) {
+                this.count = Math.max(0, this.count - amount);
+                this.updateFormation();
+            }
+
+            multiply(factor) {
+                const newCount = Math.min(Math.floor(this.count * factor), CONFIG.maxSoldiers);
+                this.count = newCount;
+                this.updateFormation();
+            }
+
+            divide(factor) {
+                this.count = Math.max(1, Math.floor(this.count / factor));
+                this.updateFormation();
+            }
+        }
+
+        class Gate {
+            constructor(distance, isLeft, operation, value) {
+                this.distance = distance;
+                this.isLeft = isLeft;
+                this.operation = operation; // 'add', 'subtract', 'multiply', 'divide'
+                this.value = value;
+                this.passed = false;
+                this.x = isLeft ? -CONFIG.gateWidth / 2 - 20 : CONFIG.gateWidth / 2 + 20;
+            }
+
+            isPositive() {
+                return this.operation === 'add' || this.operation === 'multiply';
+            }
+
+            getText() {
+                switch (this.operation) {
+                    case 'add': return `+${this.value}`;
+                    case 'subtract': return `-${this.value}`;
+                    case 'multiply': return `×${this.value}`;
+                    case 'divide': return `÷${this.value}`;
+                }
+            }
+
+            apply(army) {
+                switch (this.operation) {
+                    case 'add': army.addSoldiers(this.value); break;
+                    case 'subtract': army.removeSoldiers(this.value); break;
+                    case 'multiply': army.multiply(this.value); break;
+                    case 'divide': army.divide(this.value); break;
+                }
+            }
+        }
+
+        class Enemy {
+            constructor(distance, count, x) {
+                this.distance = distance;
+                this.count = count;
+                this.x = x;
+                this.defeated = false;
+            }
+        }
+
+        class Boss {
+            constructor(level) {
+                this.maxHP = CONFIG.baseBossHP * level;
+                this.hp = this.maxHP;
+                this.attackTimer = 0;
+                this.defeated = false;
+                this.scale = 1 + level * 0.1;
+            }
+
+            update(deltaTime, army) {
+                if (this.defeated || army.count <= 0) return;
+
+                // Boss takes damage from soldiers
+                const power = UPGRADES.soldierPower.levels[gameState.upgrades.soldierPower].value;
+                const damage = army.count * CONFIG.soldierDPS * power * deltaTime;
+                this.hp -= damage;
+
+                // Boss attacks soldiers
+                this.attackTimer += deltaTime;
+                if (this.attackTimer >= 1 / CONFIG.bossAttackRate) {
+                    this.attackTimer = 0;
+                    const killed = Math.floor(1 + Math.random() * 2 + gameState.level * 0.5);
+                    army.removeSoldiers(killed);
+
+                    // Spawn particles for killed soldiers
+                    for (let i = 0; i < killed; i++) {
+                        spawnParticles(
+                            canvas.width / 2 + (Math.random() - 0.5) * 100,
+                            canvas.height * 0.6 + (Math.random() - 0.5) * 50,
+                            CONFIG.colors.player,
+                            5
+                        );
+                    }
+                }
+
+                if (this.hp <= 0) {
+                    this.hp = 0;
+                    this.defeated = true;
+                }
+            }
+        }
+
+        class Particle {
+            constructor(x, y, color, vx, vy, size, life) {
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                this.vx = vx;
+                this.vy = vy;
+                this.size = size;
+                this.life = life;
+                this.maxLife = life;
+            }
+
+            update(deltaTime) {
+                this.x += this.vx * deltaTime * 60;
+                this.y += this.vy * deltaTime * 60;
+                this.vy += 0.2 * deltaTime * 60; // gravity
+                this.life -= deltaTime;
+            }
+
+            draw(ctx) {
+                const alpha = this.life / this.maxLife;
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size * alpha, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+            }
+        }
+
+        class FloatingText {
+            constructor(x, y, text, color) {
+                this.x = x;
+                this.y = y;
+                this.text = text;
+                this.color = color;
+                this.life = 1;
+                this.vy = -2;
+            }
+
+            update(deltaTime) {
+                this.y += this.vy * deltaTime * 60;
+                this.life -= deltaTime;
+            }
+
+            draw(ctx) {
+                const alpha = this.life;
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = this.color;
+                ctx.font = 'bold 32px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(this.text, this.x, this.y);
+                ctx.globalAlpha = 1;
+            }
+        }
+
+        // === INITIALIZATION ===
+        function init() {
+            canvas = document.getElementById('gameCanvas');
+            ctx = canvas.getContext('2d');
+
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+
+            setupTouchControls();
+            loadProgress();
+            updateUpgradeUI();
+
+            document.getElementById('highScoreDisplay').textContent = gameState.highScore;
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function resizeCanvas() {
+            const container = document.getElementById('gameContainer');
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+        }
+
+        function loadProgress() {
+            try {
+                const saved = localStorage.getItem('crowdRunnerSave');
+                if (saved) {
+                    const data = JSON.parse(saved);
+                    gameState.totalCoins = data.totalCoins || 0;
+                    gameState.highScore = data.highScore || 0;
+                    gameState.upgrades = data.upgrades || gameState.upgrades;
+                }
+            } catch (e) {
+                console.log('Could not load save data');
+            }
+        }
+
+        function saveProgress() {
+            try {
+                localStorage.setItem('crowdRunnerSave', JSON.stringify({
+                    totalCoins: gameState.totalCoins,
+                    highScore: gameState.highScore,
+                    upgrades: gameState.upgrades
+                }));
+            } catch (e) {
+                console.log('Could not save data');
+            }
+        }
+
+        // === INPUT HANDLING ===
+        function setupTouchControls() {
+            canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+            canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+            canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
+
+            canvas.addEventListener('mousedown', handleMouseDown);
+            canvas.addEventListener('mousemove', handleMouseMove);
+            canvas.addEventListener('mouseup', handleMouseUp);
+            canvas.addEventListener('mouseleave', handleMouseUp);
+        }
+
+        function handleTouchStart(e) {
+            e.preventDefault();
+            if (gameState.screen !== 'playing' && gameState.screen !== 'boss') return;
+
+            const touch = e.touches[0];
+            touchStartX = touch.clientX;
+            touchCurrentX = touch.clientX;
+            isDragging = true;
+        }
+
+        function handleTouchMove(e) {
+            e.preventDefault();
+            if (!isDragging) return;
+
+            const touch = e.touches[0];
+            touchCurrentX = touch.clientX;
+
+            const deltaX = touchCurrentX - touchStartX;
+            const moveSpeed = UPGRADES.moveSpeed.levels[gameState.upgrades.moveSpeed].value;
+            gameState.targetX += deltaX * moveSpeed;
+            gameState.targetX = Math.max(-CONFIG.pathWidth / 2 + 50, Math.min(CONFIG.pathWidth / 2 - 50, gameState.targetX));
+
+            touchStartX = touchCurrentX;
+        }
+
+        function handleTouchEnd(e) {
+            e.preventDefault();
+            isDragging = false;
+        }
+
+        function handleMouseDown(e) {
+            if (gameState.screen !== 'playing' && gameState.screen !== 'boss') return;
+
+            touchStartX = e.clientX;
+            touchCurrentX = e.clientX;
+            isDragging = true;
+        }
+
+        function handleMouseMove(e) {
+            if (!isDragging) return;
+
+            touchCurrentX = e.clientX;
+
+            const deltaX = touchCurrentX - touchStartX;
+            const moveSpeed = UPGRADES.moveSpeed.levels[gameState.upgrades.moveSpeed].value;
+            gameState.targetX += deltaX * moveSpeed;
+            gameState.targetX = Math.max(-CONFIG.pathWidth / 2 + 50, Math.min(CONFIG.pathWidth / 2 - 50, gameState.targetX));
+
+            touchStartX = touchCurrentX;
+        }
+
+        function handleMouseUp() {
+            isDragging = false;
+        }
+
+        // === GAME LOGIC ===
+        function startGame() {
+            gameState.screen = 'playing';
+            gameState.level = 1;
+            gameState.score = 0;
+            gameState.coins = 0;
+            gameState.distance = 0;
+            gameState.targetX = 0;
+            gameState.currentX = 0;
+
+            const startingCount = UPGRADES.startingArmy.levels[gameState.upgrades.startingArmy].value;
+            army = new Army(startingCount);
+            gates = [];
+            enemies = [];
+            boss = null;
+            particles = [];
+            floatingTexts = [];
+
+            generateLevel();
+            hideAllScreens();
+        }
+
+        function restartGame() {
+            startGame();
+        }
+
+        function nextLevel() {
+            gameState.level++;
+            gameState.screen = 'playing';
+            gameState.distance = 0;
+            gameState.targetX = 0;
+
+            gates = [];
+            enemies = [];
+            boss = null;
+
+            generateLevel();
+            hideAllScreens();
+        }
+
+        function generateLevel() {
+            const levelLength = CONFIG.levelLength + gameState.level * 500;
+            let currentDistance = 300;
+
+            // Generate gates
+            while (currentDistance < levelLength - 500) {
+                const gateDistance = currentDistance;
+                const gatePair = generateGatePair(gateDistance);
+                gates.push(gatePair.left);
+                gates.push(gatePair.right);
+
+                // Add enemies between gates
+                const enemyDistance = currentDistance + CONFIG.gateSpawnDistance / 2;
+                if (Math.random() > 0.4) {
+                    const enemyCount = Math.floor(10 + gameState.level * 5 + Math.random() * 15);
+                    const enemyX = (Math.random() - 0.5) * CONFIG.pathWidth * 0.6;
+                    enemies.push(new Enemy(enemyDistance, enemyCount, enemyX));
+                }
+
+                currentDistance += CONFIG.gateSpawnDistance;
+            }
+        }
+
+        function generateGatePair(distance) {
+            const positiveOps = [
+                { op: 'add', values: [10, 20, 30, 50] },
+                { op: 'multiply', values: [2, 3] }
+            ];
+
+            const negativeOps = [
+                { op: 'subtract', values: [10, 20, 30] },
+                { op: 'divide', values: [2] }
+            ];
+
+            // Pick a positive operation
+            const posChoice = positiveOps[Math.floor(Math.random() * positiveOps.length)];
+            let posValue = posChoice.values[Math.floor(Math.random() * posChoice.values.length)];
+
+            // Smart gate generation - don't offer big multiplies when army is large
+            if (posChoice.op === 'multiply' && army && army.count > 150) {
+                posValue = 2;
+            }
+
+            // Pick a negative operation
+            const negChoice = negativeOps[Math.floor(Math.random() * negativeOps.length)];
+            const negValue = negChoice.values[Math.floor(Math.random() * negChoice.values.length)];
+
+            // Randomly assign left/right
+            if (Math.random() > 0.5) {
+                return {
+                    left: new Gate(distance, true, posChoice.op, posValue),
+                    right: new Gate(distance, false, negChoice.op, negValue)
+                };
+            } else {
+                return {
+                    left: new Gate(distance, true, negChoice.op, negValue),
+                    right: new Gate(distance, false, posChoice.op, posValue)
+                };
+            }
+        }
+
+        function spawnParticles(x, y, color, count) {
+            for (let i = 0; i < count; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 2 + Math.random() * 4;
+                particles.push(new Particle(
+                    x, y, color,
+                    Math.cos(angle) * speed,
+                    Math.sin(angle) * speed - 2,
+                    3 + Math.random() * 3,
+                    0.5 + Math.random() * 0.5
+                ));
+            }
+        }
+
+        function addFloatingText(x, y, text, color) {
+            floatingTexts.push(new FloatingText(x, y, text, color));
+        }
+
+        let lastTime = 0;
+        function gameLoop(timestamp) {
+            const deltaTime = Math.min((timestamp - lastTime) / 1000, 0.1);
+            lastTime = timestamp;
+
+            update(deltaTime);
+            render();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function update(deltaTime) {
+            if (gameState.screen !== 'playing' && gameState.screen !== 'boss') return;
+
+            // Smooth movement
+            gameState.currentX += (gameState.targetX - gameState.currentX) * 0.15;
+            if (army) {
+                army.x = gameState.currentX;
+            }
+
+            // Screen shake decay
+            gameState.screenShake *= 0.9;
+
+            // Update particles
+            particles = particles.filter(p => {
+                p.update(deltaTime);
+                return p.life > 0;
+            });
+
+            // Update floating texts
+            floatingTexts = floatingTexts.filter(t => {
+                t.update(deltaTime);
+                return t.life > 0;
+            });
+
+            if (gameState.screen === 'playing') {
+                // Move forward
+                gameState.distance += CONFIG.forwardSpeed * deltaTime;
+
+                // Check gate collisions
+                checkGateCollisions();
+
+                // Check enemy collisions
+                checkEnemyCollisions();
+
+                // Check for level end
+                const levelLength = CONFIG.levelLength + gameState.level * 500;
+                if (gameState.distance >= levelLength) {
+                    startBossBattle();
+                }
+
+                // Check for game over
+                if (army.count <= 0) {
+                    gameOver();
+                }
+            } else if (gameState.screen === 'boss') {
+                if (boss) {
+                    boss.update(deltaTime, army);
+
+                    if (boss.defeated) {
+                        levelComplete();
+                    } else if (army.count <= 0) {
+                        gameOver();
+                    }
+                }
+            }
+        }
+
+        function checkGateCollisions() {
+            const armyY = canvas.height * 0.7;
+
+            gates.forEach(gate => {
+                if (gate.passed) return;
+
+                const gateScreenY = worldToScreenY(gate.distance - gameState.distance);
+
+                if (gateScreenY > armyY - 30 && gateScreenY < armyY + 30) {
+                    const gateScreenX = canvas.width / 2 + gate.x;
+                    const armyScreenX = canvas.width / 2 + army.x;
+
+                    if (Math.abs(armyScreenX - gateScreenX) < CONFIG.gateWidth / 2 + 30) {
+                        gate.passed = true;
+                        const oldCount = army.count;
+                        gate.apply(army);
+                        const diff = army.count - oldCount;
+
+                        const color = gate.isPositive() ? CONFIG.colors.positiveGate : CONFIG.colors.negativeGate;
+                        addFloatingText(canvas.width / 2, canvas.height * 0.5, gate.getText(), color);
+
+                        if (!gate.isPositive()) {
+                            gameState.screenShake = 5;
+                            spawnParticles(armyScreenX, armyY, CONFIG.colors.player, Math.min(Math.abs(diff), 20));
+                        }
+                    }
+                }
+            });
+        }
+
+        function checkEnemyCollisions() {
+            const armyY = canvas.height * 0.7;
+
+            enemies.forEach(enemy => {
+                if (enemy.defeated) return;
+
+                const enemyScreenY = worldToScreenY(enemy.distance - gameState.distance);
+
+                if (enemyScreenY > armyY - 40 && enemyScreenY < armyY + 40) {
+                    const enemyScreenX = canvas.width / 2 + enemy.x;
+                    const armyScreenX = canvas.width / 2 + army.x;
+
+                    if (Math.abs(armyScreenX - enemyScreenX) < 60) {
+                        enemy.defeated = true;
+
+                        if (army.count > enemy.count) {
+                            army.removeSoldiers(enemy.count);
+                            gameState.screenShake = 10;
+                            spawnParticles(enemyScreenX, enemyScreenY, CONFIG.colors.enemy, 15);
+                            spawnParticles(armyScreenX, armyY, CONFIG.colors.player, Math.min(enemy.count, 15));
+                            addFloatingText(canvas.width / 2, canvas.height * 0.5, `-${enemy.count}`, CONFIG.colors.enemy);
+                        } else {
+                            army.count = 0;
+                        }
+                    }
+                }
+            });
+        }
+
+        function worldToScreenY(distance) {
+            const horizon = canvas.height * 0.35;
+            const ground = canvas.height * 0.9;
+            const maxDistance = 500;
+
+            const t = Math.max(0, Math.min(1, distance / maxDistance));
+            return ground - (ground - horizon) * (1 - Math.pow(1 - t, 2));
+        }
+
+        function startBossBattle() {
+            gameState.screen = 'boss';
+            boss = new Boss(gameState.level);
+        }
+
+        function levelComplete() {
+            gameState.screen = 'levelComplete';
+
+            const bonus = army.count * gameState.level;
+            const coins = Math.floor(bonus / 10);
+
+            gameState.score += bonus;
+            gameState.coins += coins;
+            gameState.totalCoins += coins;
+
+            if (gameState.score > gameState.highScore) {
+                gameState.highScore = gameState.score;
+            }
+
+            saveProgress();
+
+            document.getElementById('survivingSoldiers').textContent = army.count;
+            document.getElementById('levelBonus').textContent = bonus;
+            document.getElementById('levelCoins').textContent = coins;
+            showScreen('levelCompleteScreen');
+        }
+
+        function gameOver() {
+            gameState.screen = 'gameOver';
+
+            const coins = Math.floor(gameState.score / 20);
+            gameState.totalCoins += coins;
+
+            if (gameState.score > gameState.highScore) {
+                gameState.highScore = gameState.score;
+            }
+
+            saveProgress();
+
+            document.getElementById('finalLevel').textContent = gameState.level;
+            document.getElementById('finalScore').textContent = gameState.score;
+            document.getElementById('coinsEarned').textContent = coins;
+            showScreen('gameOverScreen');
+        }
+
+        // === RENDERING ===
+        function render() {
+            // Apply screen shake
+            ctx.save();
+            if (gameState.screenShake > 0.5) {
+                ctx.translate(
+                    (Math.random() - 0.5) * gameState.screenShake,
+                    (Math.random() - 0.5) * gameState.screenShake
+                );
+            }
+
+            // Draw background
+            drawBackground();
+
+            // Draw path
+            drawPath();
+
+            if (gameState.screen === 'playing' || gameState.screen === 'boss') {
+                // Draw gates
+                gates.forEach(gate => {
+                    if (!gate.passed) {
+                        drawGate(gate);
+                    }
+                });
+
+                // Draw enemies
+                enemies.forEach(enemy => {
+                    if (!enemy.defeated) {
+                        drawEnemy(enemy);
+                    }
+                });
+
+                // Draw boss
+                if (gameState.screen === 'boss' && boss) {
+                    drawBoss();
+                }
+
+                // Draw army
+                if (army) {
+                    drawArmy();
+                }
+
+                // Draw particles
+                particles.forEach(p => p.draw(ctx));
+
+                // Draw floating texts
+                floatingTexts.forEach(t => t.draw(ctx));
+
+                // Draw HUD
+                drawHUD();
+            }
+
+            ctx.restore();
+        }
+
+        function drawBackground() {
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, CONFIG.colors.sky);
+            gradient.addColorStop(0.4, CONFIG.colors.horizon);
+            gradient.addColorStop(1, CONFIG.colors.horizon);
+
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+
+        function drawPath() {
+            const horizon = canvas.height * 0.35;
+            const pathTopWidth = 100;
+            const pathBottomWidth = canvas.width * 0.9;
+
+            // Main path
+            ctx.fillStyle = CONFIG.colors.path;
+            ctx.beginPath();
+            ctx.moveTo(canvas.width / 2 - pathTopWidth / 2, horizon);
+            ctx.lineTo(canvas.width / 2 + pathTopWidth / 2, horizon);
+            ctx.lineTo(canvas.width / 2 + pathBottomWidth / 2, canvas.height);
+            ctx.lineTo(canvas.width / 2 - pathBottomWidth / 2, canvas.height);
+            ctx.closePath();
+            ctx.fill();
+
+            // Path lines for motion effect
+            ctx.strokeStyle = CONFIG.colors.pathLines;
+            ctx.lineWidth = 2;
+
+            const lineCount = 10;
+            const animOffset = (gameState.distance * 0.1) % 50;
+
+            for (let i = 0; i < lineCount; i++) {
+                const t = (i * 50 + animOffset) / 500;
+                if (t > 1) continue;
+
+                const y = horizon + (canvas.height - horizon) * t;
+                const width = pathTopWidth + (pathBottomWidth - pathTopWidth) * t;
+
+                ctx.globalAlpha = 1 - t;
+                ctx.beginPath();
+                ctx.moveTo(canvas.width / 2 - width / 2, y);
+                ctx.lineTo(canvas.width / 2 + width / 2, y);
+                ctx.stroke();
+            }
+            ctx.globalAlpha = 1;
+
+            // Path edges
+            ctx.strokeStyle = CONFIG.colors.pathDark;
+            ctx.lineWidth = 4;
+
+            ctx.beginPath();
+            ctx.moveTo(canvas.width / 2 - pathTopWidth / 2, horizon);
+            ctx.lineTo(canvas.width / 2 - pathBottomWidth / 2, canvas.height);
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(canvas.width / 2 + pathTopWidth / 2, horizon);
+            ctx.lineTo(canvas.width / 2 + pathBottomWidth / 2, canvas.height);
+            ctx.stroke();
+        }
+
+        function drawGate(gate) {
+            const relativeDistance = gate.distance - gameState.distance;
+            if (relativeDistance < 0 || relativeDistance > 500) return;
+
+            const y = worldToScreenY(relativeDistance);
+            const scale = Math.max(0.2, 1 - relativeDistance / 500);
+
+            const pathTopWidth = 100;
+            const pathBottomWidth = canvas.width * 0.9;
+            const t = (y - canvas.height * 0.35) / (canvas.height - canvas.height * 0.35);
+            const pathWidthAtY = pathTopWidth + (pathBottomWidth - pathTopWidth) * t;
+
+            const gateX = canvas.width / 2 + (gate.x / CONFIG.pathWidth) * pathWidthAtY * 0.4;
+            const gateWidth = CONFIG.gateWidth * scale;
+            const gateHeight = CONFIG.gateHeight * scale;
+
+            const color = gate.isPositive() ? CONFIG.colors.positiveGate : CONFIG.colors.negativeGate;
+
+            // Gate archway
+            ctx.fillStyle = color;
+            ctx.globalAlpha = 0.7;
+            ctx.fillRect(gateX - gateWidth / 2, y - gateHeight, gateWidth, gateHeight);
+
+            // Gate border
+            ctx.globalAlpha = 1;
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 3 * scale;
+            ctx.strokeRect(gateX - gateWidth / 2, y - gateHeight, gateWidth, gateHeight);
+
+            // Gate text
+            ctx.fillStyle = 'white';
+            ctx.font = `bold ${Math.floor(24 * scale)}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(gate.getText(), gateX, y - gateHeight / 2);
+        }
+
+        function drawEnemy(enemy) {
+            const relativeDistance = enemy.distance - gameState.distance;
+            if (relativeDistance < 0 || relativeDistance > 500) return;
+
+            const y = worldToScreenY(relativeDistance);
+            const scale = Math.max(0.2, 1 - relativeDistance / 500);
+
+            const pathTopWidth = 100;
+            const pathBottomWidth = canvas.width * 0.9;
+            const t = (y - canvas.height * 0.35) / (canvas.height - canvas.height * 0.35);
+            const pathWidthAtY = pathTopWidth + (pathBottomWidth - pathTopWidth) * t;
+
+            const enemyX = canvas.width / 2 + (enemy.x / CONFIG.pathWidth) * pathWidthAtY * 0.4;
+
+            // Draw enemy soldiers
+            const rows = Math.ceil(Math.sqrt(enemy.count * 0.5));
+            const cols = Math.ceil(enemy.count / rows);
+
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    if (row * cols + col >= enemy.count) break;
+
+                    const sx = enemyX + (col - cols / 2) * 8 * scale;
+                    const sy = y - row * 8 * scale;
+
+                    drawSoldier(sx, sy, CONFIG.colors.enemy, CONFIG.colors.enemyDark, scale * 0.8);
+                }
+            }
+
+            // Enemy count
+            ctx.fillStyle = 'white';
+            ctx.strokeStyle = CONFIG.colors.enemyDark;
+            ctx.lineWidth = 3;
+            ctx.font = `bold ${Math.floor(20 * scale)}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.strokeText(enemy.count, enemyX, y - rows * 10 * scale - 10);
+            ctx.fillText(enemy.count, enemyX, y - rows * 10 * scale - 10);
+        }
+
+        function drawArmy() {
+            const baseY = canvas.height * 0.7;
+            const baseX = canvas.width / 2 + army.x;
+
+            // Draw soldiers
+            army.positions.forEach((pos, i) => {
+                const wobble = Math.sin(Date.now() * 0.01 + pos.wobble) * 2;
+                const sx = baseX + pos.x;
+                const sy = baseY - pos.y + wobble;
+
+                drawSoldier(sx, sy, CONFIG.colors.player, CONFIG.colors.playerDark, 1);
+            });
+
+            // Draw count above army
+            ctx.fillStyle = 'white';
+            ctx.strokeStyle = CONFIG.colors.playerDark;
+            ctx.lineWidth = 4;
+            ctx.font = 'bold 28px Arial';
+            ctx.textAlign = 'center';
+            ctx.strokeText(army.count, baseX, baseY - army.positions.length * 3 - 30);
+            ctx.fillText(army.count, baseX, baseY - army.positions.length * 3 - 30);
+        }
+
+        function drawSoldier(x, y, color, darkColor, scale) {
+            const size = CONFIG.soldierSize * scale;
+
+            // Body (capsule shape)
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.ellipse(x, y - size * 0.5, size * 0.6, size, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Head
+            ctx.fillStyle = darkColor;
+            ctx.beginPath();
+            ctx.arc(x, y - size * 1.3, size * 0.5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function drawBoss() {
+            if (!boss) return;
+
+            const bossX = canvas.width / 2;
+            const bossY = canvas.height * 0.45;
+            const bossSize = 80 * boss.scale;
+
+            // Boss body
+            ctx.fillStyle = CONFIG.colors.boss;
+            ctx.beginPath();
+            ctx.ellipse(bossX, bossY, bossSize * 0.8, bossSize, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Boss head
+            ctx.fillStyle = '#600000';
+            ctx.beginPath();
+            ctx.arc(bossX, bossY - bossSize * 0.9, bossSize * 0.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Boss eyes
+            ctx.fillStyle = '#FF0000';
+            ctx.beginPath();
+            ctx.arc(bossX - bossSize * 0.2, bossY - bossSize * 0.9, bossSize * 0.1, 0, Math.PI * 2);
+            ctx.arc(bossX + bossSize * 0.2, bossY - bossSize * 0.9, bossSize * 0.1, 0, Math.PI * 2);
+            ctx.fill();
+
+            // HP Bar
+            const barWidth = 250;
+            const barHeight = 25;
+            const barX = canvas.width / 2 - barWidth / 2;
+            const barY = 80;
+
+            // Bar background
+            ctx.fillStyle = '#333';
+            ctx.fillRect(barX, barY, barWidth, barHeight);
+
+            // HP fill
+            const hpPercent = boss.hp / boss.maxHP;
+            ctx.fillStyle = hpPercent > 0.3 ? '#4AD97A' : '#D94A4A';
+            ctx.fillRect(barX, barY, barWidth * hpPercent, barHeight);
+
+            // Bar border
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(barX, barY, barWidth, barHeight);
+
+            // HP text
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 16px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${Math.ceil(boss.hp)} / ${boss.maxHP}`, canvas.width / 2, barY + barHeight / 2 + 5);
+
+            // Boss label
+            ctx.font = 'bold 20px Arial';
+            ctx.fillText(`BOSS LV.${gameState.level}`, canvas.width / 2, barY - 15);
+        }
+
+        function drawHUD() {
+            // Soldier count (top left)
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 24px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText(`Soldiers: ${army ? army.count : 0}`, 20, 40);
+
+            // Level (top right)
+            ctx.textAlign = 'right';
+            ctx.fillText(`Level ${gameState.level}`, canvas.width - 20, 40);
+
+            // Coins (top center)
+            ctx.textAlign = 'center';
+            ctx.fillStyle = CONFIG.colors.gold;
+            ctx.fillText(`${gameState.totalCoins}`, canvas.width / 2, 40);
+
+            // Coin icon
+            ctx.fillStyle = CONFIG.colors.gold;
+            ctx.beginPath();
+            ctx.arc(canvas.width / 2 - 40, 35, 12, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#333';
+            ctx.font = 'bold 12px Arial';
+            ctx.fillText('$', canvas.width / 2 - 40, 39);
+        }
+
+        // === UI & MENUS ===
+        function showScreen(screenId) {
+            document.getElementById(screenId).classList.add('active');
+        }
+
+        function hideAllScreens() {
+            document.querySelectorAll('.screen').forEach(screen => {
+                screen.classList.remove('active');
+            });
+        }
+
+        function showStartFromGameOver() {
+            hideAllScreens();
+            document.getElementById('highScoreDisplay').textContent = gameState.highScore;
+            showScreen('startScreen');
+        }
+
+        function showShop() {
+            hideAllScreens();
+            document.getElementById('shopCoins').textContent = gameState.totalCoins;
+            updateUpgradeUI();
+            showScreen('shopScreen');
+        }
+
+        function hideShop() {
+            hideAllScreens();
+            document.getElementById('highScoreDisplay').textContent = gameState.highScore;
+            showScreen('startScreen');
+        }
+
+        function updateUpgradeUI() {
+            const container = document.getElementById('upgradesList');
+            container.innerHTML = '';
+
+            Object.entries(UPGRADES).forEach(([key, upgrade]) => {
+                const currentLevel = gameState.upgrades[key];
+                const nextLevel = currentLevel + 1;
+                const isMaxed = nextLevel >= upgrade.levels.length;
+                const cost = isMaxed ? 0 : upgrade.levels[nextLevel].cost;
+                const canAfford = gameState.totalCoins >= cost;
+
+                const item = document.createElement('div');
+                item.className = 'upgrade-item';
+                item.innerHTML = `
+                    <div class="upgrade-info">
+                        <h3>${upgrade.name} (Lv.${currentLevel + 1})</h3>
+                        <p>${upgrade.description}</p>
+                    </div>
+                    <button class="upgrade-btn"
+                            ${isMaxed || !canAfford ? 'disabled' : ''}
+                            onclick="purchaseUpgrade('${key}')">
+                        ${isMaxed ? 'MAX' : `${cost}`}
+                    </button>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        function purchaseUpgrade(key) {
+            const upgrade = UPGRADES[key];
+            const currentLevel = gameState.upgrades[key];
+            const nextLevel = currentLevel + 1;
+
+            if (nextLevel >= upgrade.levels.length) return;
+
+            const cost = upgrade.levels[nextLevel].cost;
+            if (gameState.totalCoins < cost) return;
+
+            gameState.totalCoins -= cost;
+            gameState.upgrades[key] = nextLevel;
+
+            saveProgress();
+            document.getElementById('shopCoins').textContent = gameState.totalCoins;
+            updateUpgradeUI();
+        }
+
+        // Initialize game when page loads
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
