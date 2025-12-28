@@ -1110,7 +1110,7 @@
 
         function spawnProjectile(army) {
             const baseX = canvas.width / 2 + army.x;
-            const baseY = canvas.height * 0.7;
+            const baseY = canvas.height * 0.82;
             const targetX = canvas.width / 2;
             const targetY = canvas.height * 0.45;
 
@@ -1204,7 +1204,7 @@
         }
 
         function checkGateCollisions() {
-            const armyY = canvas.height * 0.7;
+            const armyY = canvas.height * 0.82;
 
             gates.forEach(gate => {
                 if (gate.passed) return;
@@ -1251,7 +1251,7 @@
         }
 
         function checkEnemyCollisions() {
-            const armyY = canvas.height * 0.7;
+            const armyY = canvas.height * 0.82;
 
             enemies.forEach(enemy => {
                 if (enemy.defeated) return;
@@ -1284,7 +1284,7 @@
         }
 
         function checkPowerupCollisions() {
-            const armyY = canvas.height * 0.7;
+            const armyY = canvas.height * 0.82;
 
             powerups.forEach(powerup => {
                 if (powerup.collected) return;
@@ -1617,7 +1617,7 @@
         }
 
         function drawArmy() {
-            const baseY = canvas.height * 0.7;
+            const baseY = canvas.height * 0.82;
             const baseX = canvas.width / 2 + army.x;
 
             const color = army.getCurrentColor();
