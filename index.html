@@ -282,10 +282,14 @@
 
     <script>
         // === WEAPON DEFINITIONS ===
+        // range: how far ahead they can shoot (in world units)
+        // fireRate: shots per second per soldier (scaled down for balance)
         const WEAPONS = {
             fists: {
                 name: 'Fists',
                 damage: 1,
+                range: 0,        // melee only
+                fireRate: 0,
                 color: '#4A90D9',
                 colorDark: '#3A7BC8',
                 icon: '👊',
@@ -293,7 +297,9 @@
             },
             bow: {
                 name: 'Bow & Arrow',
-                damage: 1.5,
+                damage: 2,
+                range: 150,      // short range
+                fireRate: 0.5,   // slow
                 color: '#8B4513',
                 colorDark: '#654321',
                 icon: '🏹',
@@ -301,7 +307,9 @@
             },
             musket: {
                 name: 'Musket',
-                damage: 2,
+                damage: 4,
+                range: 200,      // medium range
+                fireRate: 0.3,   // very slow but powerful
                 color: '#696969',
                 colorDark: '#505050',
                 icon: '🔫',
@@ -310,6 +318,8 @@
             rifle: {
                 name: 'Rifle',
                 damage: 3,
+                range: 280,      // long range
+                fireRate: 1.0,   // moderate
                 color: '#2F4F4F',
                 colorDark: '#1C3030',
                 icon: '🎯',
@@ -317,7 +327,9 @@
             },
             machinegun: {
                 name: 'Machine Gun',
-                damage: 5,
+                damage: 2,
+                range: 320,      // long range
+                fireRate: 3.0,   // very fast
                 color: '#4B0082',
                 colorDark: '#2E0051',
                 icon: '⚡',
@@ -325,7 +337,9 @@
             },
             laser: {
                 name: 'Laser',
-                damage: 8,
+                damage: 5,
+                range: 400,      // very long range
+                fireRate: 2.0,   // fast
                 color: '#00FFFF',
                 colorDark: '#00CCCC',
                 icon: '💫',
@@ -340,7 +354,9 @@
         const POWERUPS = {
             minigun: {
                 name: 'MINIGUN',
-                damage: 12,
+                damage: 3,
+                range: 350,
+                fireRate: 6.0,   // insane fire rate
                 duration: 10,
                 color: '#FF4500',
                 colorDark: '#CC3700',
@@ -349,7 +365,9 @@
             },
             rocket: {
                 name: 'ROCKETS',
-                damage: 20,
+                damage: 15,
+                range: 400,
+                fireRate: 1.5,
                 duration: 10,
                 color: '#FF0000',
                 colorDark: '#CC0000',
@@ -650,8 +668,27 @@
             constructor(distance, count, x) {
                 this.distance = distance;
                 this.count = count;
+                this.maxCount = count;  // track original size
                 this.x = x;
                 this.defeated = false;
+                this.hitFlash = 0;  // visual feedback when hit
+            }
+
+            takeDamage(amount) {
+                this.count -= amount;
+                this.hitFlash = 0.2;  // flash for 0.2 seconds
+                if (this.count <= 0) {
+                    this.count = 0;
+                    this.defeated = true;
+                    return true;  // killed
+                }
+                return false;
+            }
+
+            update(deltaTime) {
+                if (this.hitFlash > 0) {
+                    this.hitFlash -= deltaTime;
+                }
             }
         }
 
@@ -1133,6 +1170,93 @@
             floatingTexts.push(new FloatingText(x, y, text, color, size));
         }
 
+        // Ranged attack system - soldiers shoot at enemies ahead
+        let rangedAttackTimer = 0;
+        function performRangedAttacks(deltaTime) {
+            if (!army || army.count <= 0) return;
+
+            const weaponData = army.getWeaponData();
+            const range = weaponData.range || 0;
+            const fireRate = weaponData.fireRate || 0;
+
+            // No ranged attack for melee weapons
+            if (range <= 0 || fireRate <= 0) return;
+
+            // Find enemies in range
+            const enemiesInRange = enemies.filter(enemy => {
+                if (enemy.defeated) return false;
+                const relativeDistance = enemy.distance - gameState.distance;
+                return relativeDistance > 0 && relativeDistance <= range;
+            });
+
+            if (enemiesInRange.length === 0) return;
+
+            // Sort by distance (closest first)
+            enemiesInRange.sort((a, b) => a.distance - b.distance);
+            const targetEnemy = enemiesInRange[0];
+
+            // Calculate damage per second
+            // More soldiers = more damage, but with diminishing returns
+            const effectiveSoldiers = Math.sqrt(army.count) * 2;
+            const dps = effectiveSoldiers * weaponData.damage * fireRate;
+            const damageThisFrame = dps * deltaTime;
+
+            // Deal damage to target enemy
+            const killed = targetEnemy.takeDamage(damageThisFrame);
+
+            // Spawn visual projectiles based on fire rate
+            rangedAttackTimer += deltaTime;
+            const timeBetweenShots = 1 / (fireRate * Math.min(army.count / 10, 3));
+
+            if (rangedAttackTimer >= timeBetweenShots) {
+                rangedAttackTimer = 0;
+                spawnProjectileAtEnemy(targetEnemy);
+            }
+
+            // If killed, show floating text and particles
+            if (killed) {
+                const enemyScreenY = worldToScreenY(targetEnemy.distance - gameState.distance);
+                const pathTopWidth = 100;
+                const pathBottomWidth = canvas.width * 0.9;
+                const t = (enemyScreenY - canvas.height * 0.35) / (canvas.height - canvas.height * 0.35);
+                const pathWidthAtY = pathTopWidth + (pathBottomWidth - pathTopWidth) * t;
+                const enemyScreenX = canvas.width / 2 + (targetEnemy.x / CONFIG.pathWidth) * pathWidthAtY * 0.4;
+
+                addFloatingText(enemyScreenX, enemyScreenY - 30, 'KILLED!', '#FFD700', 28);
+                spawnParticles(enemyScreenX, enemyScreenY, CONFIG.colors.enemy, 20);
+                gameState.screenShake = 5;
+            }
+        }
+
+        function spawnProjectileAtEnemy(enemy) {
+            const baseX = canvas.width / 2 + army.x;
+            const baseY = canvas.height * 0.82;
+
+            // Calculate enemy screen position
+            const relativeDistance = enemy.distance - gameState.distance;
+            const enemyScreenY = worldToScreenY(relativeDistance);
+            const pathTopWidth = 100;
+            const pathBottomWidth = canvas.width * 0.9;
+            const t = (enemyScreenY - canvas.height * 0.35) / (canvas.height - canvas.height * 0.35);
+            const pathWidthAtY = pathTopWidth + (pathBottomWidth - pathTopWidth) * t;
+            const enemyScreenX = canvas.width / 2 + (enemy.x / CONFIG.pathWidth) * pathWidthAtY * 0.4;
+
+            let type = 'bullet';
+            if (army.activeBuff === 'rocket') type = 'rocket';
+            else if (army.activeBuff === 'minigun') type = 'bullet';
+            else if (army.weapon === 'laser') type = 'laser';
+            else if (army.weapon === 'bow') type = 'arrow';
+
+            projectiles.push(new Projectile(
+                baseX + (Math.random() - 0.5) * 40,
+                baseY - Math.random() * 20,
+                enemyScreenX + (Math.random() - 0.5) * 20,
+                enemyScreenY + (Math.random() - 0.5) * 20,
+                army.getCurrentColor(),
+                type
+            ));
+        }
+
         let lastTime = 0;
         function gameLoop(timestamp) {
             const deltaTime = Math.min((timestamp - lastTime) / 1000, 0.1);
@@ -1177,6 +1301,12 @@
 
             if (gameState.screen === 'playing') {
                 gameState.distance += CONFIG.forwardSpeed * deltaTime;
+
+                // Update enemies
+                enemies.forEach(e => e.update(deltaTime));
+
+                // Ranged attacks on enemies
+                performRangedAttacks(deltaTime);
 
                 checkGateCollisions();
                 checkEnemyCollisions();
@@ -1265,16 +1395,20 @@
                     if (Math.abs(armyScreenX - enemyScreenX) < 60) {
                         enemy.defeated = true;
 
-                        // Weapon affects combat effectiveness
-                        const damageMultiplier = army.getDamageMultiplier();
-                        const effectiveEnemyCount = Math.ceil(enemy.count / damageMultiplier);
+                        // Use remaining enemy count (already reduced by ranged attacks)
+                        const remainingEnemies = Math.ceil(enemy.count);
 
-                        if (army.count > effectiveEnemyCount) {
-                            army.removeSoldiers(effectiveEnemyCount);
+                        if (remainingEnemies <= 0) {
+                            // Already killed by ranged, no collision damage
+                            return;
+                        }
+
+                        if (army.count > remainingEnemies) {
+                            army.removeSoldiers(remainingEnemies);
                             gameState.screenShake = 10;
                             spawnParticles(enemyScreenX, enemyScreenY, CONFIG.colors.enemy, 15);
-                            spawnParticles(armyScreenX, armyY, army.getCurrentColor(), Math.min(effectiveEnemyCount, 15));
-                            addFloatingText(canvas.width / 2, canvas.height * 0.5, `-${effectiveEnemyCount}`, CONFIG.colors.enemy);
+                            spawnParticles(armyScreenX, armyY, army.getCurrentColor(), Math.min(remainingEnemies, 15));
+                            addFloatingText(canvas.width / 2, canvas.height * 0.5, `-${remainingEnemies}`, CONFIG.colors.enemy);
                         } else {
                             army.count = 0;
                         }
@@ -1593,27 +1727,57 @@
 
             const enemyX = canvas.width / 2 + (enemy.x / CONFIG.pathWidth) * pathWidthAtY * 0.4;
 
-            const rows = Math.ceil(Math.sqrt(enemy.count * 0.5));
-            const cols = Math.ceil(enemy.count / rows);
+            // Use current count for display (floor it since we deal fractional damage)
+            const displayCount = Math.ceil(enemy.count);
+            const rows = Math.ceil(Math.sqrt(displayCount * 0.5));
+            const cols = Math.ceil(displayCount / rows);
+
+            // Hit flash effect - enemies flash white when taking damage
+            const isFlashing = enemy.hitFlash > 0;
+            const enemyColor = isFlashing ? '#FFFFFF' : CONFIG.colors.enemy;
+            const enemyColorDark = isFlashing ? '#CCCCCC' : CONFIG.colors.enemyDark;
 
             for (let row = 0; row < rows; row++) {
                 for (let col = 0; col < cols; col++) {
-                    if (row * cols + col >= enemy.count) break;
+                    if (row * cols + col >= displayCount) break;
 
                     const sx = enemyX + (col - cols / 2) * 8 * scale;
                     const sy = y - row * 8 * scale;
 
-                    drawSoldier(sx, sy, CONFIG.colors.enemy, CONFIG.colors.enemyDark, scale * 0.8, null);
+                    drawSoldier(sx, sy, enemyColor, enemyColorDark, scale * 0.8, null);
                 }
             }
 
+            // Show HP bar if enemy has taken damage
+            if (enemy.count < enemy.maxCount) {
+                const barWidth = 60 * scale;
+                const barHeight = 6 * scale;
+                const barX = enemyX - barWidth / 2;
+                const barY = y - rows * 10 * scale - 25 * scale;
+
+                // Background
+                ctx.fillStyle = '#333';
+                ctx.fillRect(barX, barY, barWidth, barHeight);
+
+                // HP fill
+                const hpPercent = enemy.count / enemy.maxCount;
+                ctx.fillStyle = hpPercent > 0.3 ? '#D94A4A' : '#FF6B6B';
+                ctx.fillRect(barX, barY, barWidth * hpPercent, barHeight);
+
+                // Border
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(barX, barY, barWidth, barHeight);
+            }
+
+            // Enemy count
             ctx.fillStyle = 'white';
             ctx.strokeStyle = CONFIG.colors.enemyDark;
             ctx.lineWidth = 3;
             ctx.font = `bold ${Math.floor(20 * scale)}px Arial`;
             ctx.textAlign = 'center';
-            ctx.strokeText(enemy.count, enemyX, y - rows * 10 * scale - 10);
-            ctx.fillText(enemy.count, enemyX, y - rows * 10 * scale - 10);
+            ctx.strokeText(displayCount, enemyX, y - rows * 10 * scale - 10);
+            ctx.fillText(displayCount, enemyX, y - rows * 10 * scale - 10);
         }
 
         function drawArmy() {
