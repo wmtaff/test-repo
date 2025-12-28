@@ -1012,18 +1012,18 @@
                     gates.push(gatePair.right);
                 }
 
-                // Add enemies between gates
+                // Add enemies between gates (80% chance, always at least some enemies)
                 const enemyDistance = currentDistance + CONFIG.gateSpawnDistance / 2;
-                if (Math.random() > 0.4) {
+                if (Math.random() < 0.8) {
                     const enemyCount = Math.floor(10 + gameState.level * 5 + Math.random() * 15);
-                    const enemyX = (Math.random() - 0.5) * CONFIG.pathWidth * 0.6;
+                    const enemyX = (Math.random() - 0.5) * CONFIG.pathWidth * 0.5;
                     enemies.push(new Enemy(enemyDistance, enemyCount, enemyX));
                 }
 
-                // Occasionally spawn power-ups
-                if (Math.random() > 0.7) {
-                    const powerupDistance = currentDistance + CONFIG.gateSpawnDistance * 0.75;
-                    const powerupX = (Math.random() - 0.5) * CONFIG.pathWidth * 0.4;
+                // Rarely spawn power-ups (only 10% chance, not on weapon gate sections)
+                if (gateIndex % 3 !== 2 && Math.random() < 0.1) {
+                    const powerupDistance = currentDistance + CONFIG.gateSpawnDistance * 0.25;
+                    const powerupX = (Math.random() > 0.5 ? 1 : -1) * CONFIG.pathWidth * 0.3;
                     const powerupType = Math.random() > 0.5 ? 'minigun' : 'rocket';
                     powerups.push(new PowerUp(powerupDistance, powerupX, powerupType));
                 }
